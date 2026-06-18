@@ -86,10 +86,25 @@ def run_export():
 
 @APP.post("/check_ticker")
 def check_ticker(req: TickerReq):
-    result = run_cmd(
-        ["/root/polymarket/.venv/bin/python", "check_focus_ticker.py", req.ticker]
+    data = load_latest_json()
+    target = req.ticker.strip().upper()
+    market = None
+
+    for item in data if isinstance(data, list) else []:
+        pmid = str(item.get("platform_market_id", "")).upper()
+        if pmid == target:
+            market = normalize_market(item)
+            break
+
+    return ok_response(
+        status="found" if market else "not_found",
+        count=1 if market else 0,
+        data={
+            "ticker": target,
+            "latest_found": market is not None,
+            "latest_market": market,
+        },
     )
-    return ok_response(status="ok" if result["ok"] else "error", data=result)
 
 
 @APP.post("/run_export_and_check")
