@@ -1,0 +1,10 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.log
+*.csv
+*.json
+focus_command_bridge.py.OK
+focus_command_bridge.py.bak.*
+0
