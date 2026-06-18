@@ -154,6 +154,31 @@ def latest_markets(
             "markets": markets,
         },
     )
+@APP.get("/latest_ticker")
+def latest_ticker(ticker: str = Query(..., min_length=1)):
+    data = load_latest_json()
+    target = ticker.strip().upper()
+
+    for item in data if isinstance(data, list) else []:
+        pmid = str(item.get("platform_market_id", "")).upper()
+        if pmid == target:
+            return ok_response(
+                status="found",
+                count=1,
+                data={
+                    "ticker": target,
+                    "market": normalize_market(item),
+                },
+            )
+
+    return ok_response(
+        status="not_found",
+        count=0,
+        data={
+            "ticker": target,
+            "market": None,
+        },
+    )
 
 @APP.get("/latest_summary")
 def latest_summary():
