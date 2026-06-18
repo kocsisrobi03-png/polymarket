@@ -458,7 +458,6 @@ def build_kalshi_rows(markets, now_utc):
 
     return rows
 
-
 def fetch_kalshi_series_tickers():
     tickers = []
     seen = set()
