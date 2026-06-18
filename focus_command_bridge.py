@@ -1,59 +1,61 @@
+from __future__ import annotations
 
-from fastapi import FastAPI, HTTPException, Query
-from pydantic import BaseModel
-from pathlib import Path
-import subprocess
 import json
+import subprocess
+from pathlib import Path
 
-APP = FastAPI(title="Polymarket Focus Command Bridge", version="0.5.0")
+from fastapi import FastAPI, Query
+from pydantic import BaseModel
 
-ROOT = Path("/root/polymarket").resolve()
-WRAPPER = ROOT / "focus_check_wrapper_smart.sh"
-EXPORT_SCRIPT = ROOT / "run_focus_export_clean.py"
-LATEST_JSON = ROOT / "polymarket_focus_latest.json"
+APP = FastAPI()
+
+BASE_DIR = Path("/root/polymarket")
+LATEST_JSON = BASE_DIR / "polymarket_focus_latest.json"
+
 
 class TickerReq(BaseModel):
     ticker: str
 
+
 class SeriesReq(BaseModel):
     series: str
+
 
 def ok_response(status: str, data=None, count=None, **extra):
     payload = {
         "ok": True,
         "status": status,
-        "count": count,
-        "data": data if data is not None else {},
     }
+    if count is not None:
+        payload["count"] = count
+    if data is not None:
+        payload["data"] = data
     payload.update(extra)
     return payload
 
+
 def run_cmd(cmd: list[str], timeout: int = 180) -> dict:
-    try:
-        result = subprocess.run(
-            cmd,
-            cwd=str(ROOT),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-        return {
-        "ok": result.returncode == 0,
-        "status": "ok" if result.returncode == 0 else "error",
-        "count": 0,
-        "data": {
-            "stdout": result.stdout[-12000:],
-            "stderr": result.stderr[-8000:],
-        },
-        "returncode": result.returncode,
+    proc = subprocess.run(
+        cmd,
+        cwd=BASE_DIR,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    return {
+        "ok": proc.returncode == 0,
+        "returncode": proc.returncode,
+        "stdout": proc.stdout,
+        "stderr": proc.stderr,
+        "cmd": cmd,
     }
-    except subprocess.TimeoutExpired:
-        raise HTTPException(status_code=504, detail="command timeout")
+
 
 def load_latest_json():
     if not LATEST_JSON.exists():
-        raise HTTPException(status_code=404, detail="latest json not found")
+        return []
     return json.loads(LATEST_JSON.read_text(encoding="utf-8"))
+
 
 def normalize_market(item: dict) -> dict:
     return {
@@ -63,97 +65,83 @@ def normalize_market(item: dict) -> dict:
         "slug": item.get("slug"),
     }
 
+
 @APP.get("/health")
 def health():
     return ok_response(
-        status="ready",
-        count=0,
+        status="ok",
         data={
-            "root": str(ROOT),
-            "wrapper_exists": WRAPPER.exists(),
-            "export_exists": EXPORT_SCRIPT.exists(),
+            "service": "polymarket-focus-bridge",
             "latest_json_exists": LATEST_JSON.exists(),
+            "latest_json_file": str(LATEST_JSON),
         },
     )
+
 
 @APP.post("/run_export")
 def run_export():
-    if not EXPORT_SCRIPT.exists():
-        raise HTTPException(status_code=404, detail="export script not found")
-    return run_cmd(["python3", str(EXPORT_SCRIPT)])
+    result = run_cmd(["/root/polymarket/.venv/bin/python", "run_focus_export_clean.py"])
+    return ok_response(status="ok" if result["ok"] else "error", data=result)
+
 
 @APP.post("/check_ticker")
 def check_ticker(req: TickerReq):
-    if not WRAPPER.exists():
-        raise HTTPException(status_code=404, detail="smart wrapper not found")
-    return run_cmd(["bash", str(WRAPPER), req.ticker])
+    result = run_cmd(
+        ["/root/polymarket/.venv/bin/python", "check_focus_ticker.py", req.ticker]
+    )
+    return ok_response(status="ok" if result["ok"] else "error", data=result)
+
 
 @APP.post("/run_export_and_check")
 def run_export_and_check(req: TickerReq):
-    if not WRAPPER.exists():
-        raise HTTPException(status_code=404, detail="smart wrapper not found")
-    return run_cmd(["bash", str(WRAPPER), req.ticker], timeout=240)
+    export_result = run_cmd(["/root/polymarket/.venv/bin/python", "run_focus_export_clean.py"])
+    check_result = run_cmd(
+        ["/root/polymarket/.venv/bin/python", "check_focus_ticker.py", req.ticker]
+    )
+    return ok_response(
+        status="ok" if export_result["ok"] and check_result["ok"] else "error",
+        data={
+            "export": export_result,
+            "check": check_result,
+        },
+    )
+
 
 @APP.post("/check_series")
 def check_series(req: SeriesReq):
-    data = load_latest_json()
-    prefix = req.series.strip().upper()
-    matches = []
-
-    for item in data if isinstance(data, list) else []:
-        pmid = str(item.get("platform_market_id", ""))
-        if pmid.upper().startswith(prefix):
-            matches.append(normalize_market(item))
-
-    return ok_response(
-        status="filtered",
-        count=len(matches),
-        data={
-            "series": prefix,
-            "matches": matches[:50],
-        },
+    result = run_cmd(
+        ["/root/polymarket/.venv/bin/python", "check_focus_series.py", req.series]
     )
+    return ok_response(status="ok" if result["ok"] else "error", data=result)
+
 
 @APP.get("/latest_markets")
 def latest_markets(
-    series: str | None = Query(default=None),
-    contains: str | None = Query(default=None),
-    limit: int = Query(default=20, ge=1, le=200),
+    limit: int = Query(20, ge=1, le=500),
+    event: str | None = None,
+    platform: str | None = None,
 ):
     data = load_latest_json()
-    rows = data if isinstance(data, list) else []
+    rows = []
 
-    prefix = None
-    if series:
-        prefix = series.strip().upper()
-        rows = [
-            item for item in rows
-            if str(item.get("platform_market_id", "")).upper().startswith(prefix)
-        ]
+    for item in data if isinstance(data, list) else []:
+        row = normalize_market(item)
 
-    contains_norm = None
-    if contains:
-        contains_norm = contains.strip().upper()
-        rows = [
-            item for item in rows
-            if contains_norm in str(item.get("platform_market_id", "")).upper()
-            or contains_norm in str(item.get("event", "")).upper()
-            or contains_norm in str(item.get("slug", "")).upper()
-            or contains_norm in str(item.get("question", "")).upper()
-        ]
+        if event and str(row.get("event", "")).upper() != event.strip().upper():
+            continue
 
-    markets = [normalize_market(item) for item in rows[:limit]]
+        if platform and str(item.get("platform", "")).upper() != platform.strip().upper():
+            continue
+
+        rows.append(row)
 
     return ok_response(
-        status="filtered",
-        count=len(rows),
-        data={
-            "series": prefix,
-            "contains": contains_norm,
-            "limit": limit,
-            "markets": markets,
-        },
+        status="ok",
+        count=len(rows[:limit]),
+        data=rows[:limit],
     )
+
+
 @APP.get("/latest_ticker")
 def latest_ticker(ticker: str = Query(..., min_length=1)):
     data = load_latest_json()
@@ -180,25 +168,53 @@ def latest_ticker(ticker: str = Query(..., min_length=1)):
         },
     )
 
-@APP.get("/latest_summary")
-def latest_summary():
+
+@APP.get("/latest_series")
+def latest_series(
+    series: str = Query(..., min_length=1),
+    limit: int = Query(50, ge=1, le=500),
+):
     data = load_latest_json()
-    rows = len(data) if isinstance(data, list) else 0
-    series = {}
+    target = series.strip().upper()
+    rows = []
 
     for item in data if isinstance(data, list) else []:
-        pmid = str(item.get("platform_market_id", ""))
-        prefix = pmid.split("-")[0] if "-" in pmid else "UNKNOWN"
-        series[prefix] = series.get(prefix, 0) + 1
+        event = str(item.get("event", "")).upper()
+        pmid = str(item.get("platform_market_id", "")).upper()
 
-    top_series = dict(sorted(series.items(), key=lambda kv: (-kv[1], kv[0]))[:10])
+        if event.startswith(target) or pmid.startswith(target):
+            rows.append(normalize_market(item))
 
     return ok_response(
-        status="summary",
-        count=rows,
+        status="found" if rows else "not_found",
+        count=len(rows),
         data={
-            "top_series": top_series,
-            "file": str(LATEST_JSON),
+            "series": target,
+            "markets": rows[:limit],
         },
     )
 
+
+@APP.get("/latest_summary")
+def latest_summary():
+    data = load_latest_json()
+    rows = data if isinstance(data, list) else []
+
+    by_event = {}
+    by_platform = {}
+
+    for item in rows:
+        event = str(item.get("event", "") or "UNKNOWN")
+        platform = str(item.get("platform", "") or "UNKNOWN")
+
+        by_event[event] = by_event.get(event, 0) + 1
+        by_platform[platform] = by_platform.get(platform, 0) + 1
+
+    return ok_response(
+        status="ok",
+        data={
+            "total_markets": len(rows),
+            "by_event": by_event,
+            "by_platform": by_platform,
+        },
+    )
