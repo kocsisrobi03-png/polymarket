@@ -110,14 +110,26 @@ def check_ticker(req: TickerReq):
 @APP.post("/run_export_and_check")
 def run_export_and_check(req: TickerReq):
     export_result = run_cmd(["/root/polymarket/.venv/bin/python", "run_focus_export_clean.py"])
-    check_result = run_cmd(
-        ["/root/polymarket/.venv/bin/python", "check_focus_ticker.py", req.ticker]
-    )
+
+    data = load_latest_json()
+    target = req.ticker.strip().upper()
+    market = None
+
+    for item in data if isinstance(data, list) else []:
+        pmid = str(item.get("platform_market_id", "")).upper()
+        if pmid == target:
+            market = normalize_market(item)
+            break
+
     return ok_response(
-        status="ok" if export_result["ok"] and check_result["ok"] else "error",
+        status="found" if market else "not_found",
+        count=1 if market else 0,
         data={
+            "ticker": target,
+            "export_ok": export_result["ok"],
             "export": export_result,
-            "check": check_result,
+            "latest_found": market is not None,
+            "latest_market": market,
         },
     )
 
