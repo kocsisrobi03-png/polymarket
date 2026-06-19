@@ -1,0 +1,21 @@
+Next steps
+
+1. Check:
+   - curl -s http://127.0.0.1:8012/health
+   - curl -s http://127.0.0.1:8012/latest_summary
+
+2. Optional:
+   - Add auth layer or reverse proxy if bridge will be exposed outside localhost.
+   - Trim verbose stdout from export responses if API payload becomes too large.
+   - Add exact series/ticker tests in a small smoke-test script.
+
+3. Daily use:
+   - POST /run_export
+   - GET /latest_ticker?ticker=...
+   - GET /latest_series?series=...
+   - POST /check_ticker
+   - POST /run_export_and_check
+
+4. If something breaks:
+   - systemctl status polymarket-focus-bridge --no-pager -l
+   - journalctl -u polymarket-focus-bridge -n 50 --no-pager

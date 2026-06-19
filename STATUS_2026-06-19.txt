@@ -1,0 +1,30 @@
+Polymarket focus bridge status - 2026-06-19
+
+Done:
+- Fixed run_focus_export_clean.py build_kalshi_rows block.
+- Added bridge endpoint: GET /latest_ticker
+- Added bridge endpoint: GET /latest_series
+- Updated POST /check_ticker to use latest JSON lookup only.
+- Updated POST /run_export_and_check to run export and then use latest JSON lookup only.
+- Bridge service restarts cleanly and responds on 127.0.0.1:8012.
+- Repository cleaned; backup files ignored in .gitignore.
+
+Recent commits:
+- 9e0503f ignore backup files
+- 350408a make run_export_and_check use latest json only
+- dfab392 make check_ticker use latest json only
+- 7b236ac add latest_series endpoint
+- 4f9a748 add latest_ticker endpoint
+- d2f8ef1 fix run_focus_export_clean build_kalshi_rows block
+
+Useful endpoints:
+- GET /health
+- GET /latest_summary
+- GET /latest_markets
+- GET /latest_ticker?ticker=...
+- GET /latest_series?series=...
+- POST /check_ticker
+- POST /run_export_and_check
+
+Current note:
+- Bridge now depends on latest exported JSON for ticker/series lookups.
