@@ -157,7 +157,9 @@ def latest_markets(
         if event and str(row.get("event", "")).upper() != event.strip().upper():
             continue
 
-        if platform and str(item.get("platform", "")).upper() != platform.strip().upper():
+        row_platform = str(item.get("platform") or item.get("source") or "").upper()
+
+        if platform and row_platform != platform.strip().upper():
             continue
 
         rows.append(row)
@@ -232,7 +234,7 @@ def latest_summary():
 
     for item in rows:
         event = str(item.get("event", "") or "UNKNOWN")
-        platform = str(item.get("platform", "") or "UNKNOWN")
+        platform = str(item.get("platform") or item.get("source") or "UNKNOWN")
 
         by_event[event] = by_event.get(event, 0) + 1
         by_platform[platform] = by_platform.get(platform, 0) + 1
