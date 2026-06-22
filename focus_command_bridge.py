@@ -127,7 +127,9 @@ def run_export_and_check(req: TickerReq):
         data={
             "ticker": target,
             "export_ok": export_result["ok"],
-            "export": export_result,
+            "export_returncode": export_result["returncode"],
+            "export_stdout_tail": export_result["stdout"][-1200:],
+            "export_stderr": export_result["stderr"],
             "latest_found": market is not None,
             "latest_market": market,
         },
@@ -136,10 +138,25 @@ def run_export_and_check(req: TickerReq):
 
 @APP.post("/check_series")
 def check_series(req: SeriesReq):
-    result = run_cmd(
-        ["/root/polymarket/.venv/bin/python", "check_focus_series.py", req.series]
+    target = req.series.strip().upper()
+    data = load_latest_json()
+    rows = []
+
+    for item in data if isinstance(data, list) else []:
+        event = str(item.get("event", "")).upper()
+        pmid = str(item.get("platform_market_id", "")).upper()
+
+        if event.startswith(target) or pmid.startswith(target):
+            rows.append(normalize_market(item))
+
+    return ok_response(
+        status="found" if rows else "not_found",
+        count=len(rows),
+        data={
+            "series": target,
+            "markets": rows,
+        },
     )
-    return ok_response(status="ok" if result["ok"] else "error", data=result)
 
 
 @APP.get("/latest_markets")
@@ -158,7 +175,6 @@ def latest_markets(
             continue
 
         row_platform = str(item.get("platform") or item.get("source") or "").upper()
-
         if platform and row_platform != platform.strip().upper():
             continue
 
