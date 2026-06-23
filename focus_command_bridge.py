@@ -81,8 +81,15 @@ def health():
 @APP.post("/run_export")
 def run_export():
     result = run_cmd(["/root/polymarket/.venv/bin/python", "run_focus_export_clean.py"])
-    return ok_response(status="ok" if result["ok"] else "error", data=result)
-
+    return ok_response(
+        status="ok" if result["ok"] else "error",
+        data={
+            "export_ok": result["ok"],
+            "export_returncode": result["returncode"],
+            "export_stdout_tail": result["stdout"][-1200:],
+            "export_stderr": result["stderr"],
+        },
+    )
 
 @APP.post("/check_ticker")
 def check_ticker(req: TickerReq):
