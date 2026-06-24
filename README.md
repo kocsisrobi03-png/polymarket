@@ -2,6 +2,16 @@
 
 FastAPI bridge for Polymarket/Kalshi focus export, local checks, and simple bridge operations.
 
+## Quick start
+
+```bash
+make health
+make smoke
+make verify
+make status
+make latest
+```
+
 ## Daily ops
 
 ### Health
