@@ -1,3 +1,4 @@
+cat > /root/polymarket/run_focus_export_clean.py <<'PY'
 #!/usr/bin/env python3
 
 import csv
@@ -115,6 +116,11 @@ def normalize_text(value):
     return " ".join(safe_str(value).strip().lower().split())
 
 
+def debug_print(*args):
+    if DEBUG:
+        print(*args, flush=True)
+
+
 def set_file_mode(path):
     os.chmod(path, FILE_MODE)
 
@@ -173,7 +179,7 @@ def cleanup_old_exports(base_dir, keep_count):
             except FileNotFoundError:
                 pass
 
-    print("DELETED_OLD_FILES:", len(deleted), flush=True)
+    debug_print("DELETED_OLD_FILES:", len(deleted))
 
 
 def calc_score(probability, volume, liquidity):
@@ -446,17 +452,18 @@ def build_kalshi_rows(markets, now_utc):
             rows.append(record)
             passed += 1
 
-    print("KALSHI_MODE:", KALSHI_MODE, flush=True)
-    print("KALSHI_STATUS_COUNTS:", status_counts, flush=True)
-    print("KALSHI_TOTAL_MARKETS:", total_markets, flush=True)
-    print("KALSHI_BAD_STATUS:", bad_status, flush=True)
-    print("KALSHI_BAD_PROBABILITY:", bad_probability, flush=True)
-    print("KALSHI_BAD_VOLUME:", bad_volume, flush=True)
-    print("KALSHI_BAD_LIQUIDITY:", bad_liquidity, flush=True)
-    print("KALSHI_BAD_CATEGORY:", bad_category, flush=True)
-    print("KALSHI_PASSED:", passed, flush=True)
+    debug_print("KALSHI_MODE:", KALSHI_MODE)
+    debug_print("KALSHI_STATUS_COUNTS:", status_counts)
+    debug_print("KALSHI_TOTAL_MARKETS:", total_markets)
+    debug_print("KALSHI_BAD_STATUS:", bad_status)
+    debug_print("KALSHI_BAD_PROBABILITY:", bad_probability)
+    debug_print("KALSHI_BAD_VOLUME:", bad_volume)
+    debug_print("KALSHI_BAD_LIQUIDITY:", bad_liquidity)
+    debug_print("KALSHI_BAD_CATEGORY:", bad_category)
+    debug_print("KALSHI_PASSED:", passed)
 
     return rows
+
 
 def fetch_kalshi_series_tickers():
     tickers = []
@@ -474,11 +481,11 @@ def fetch_kalshi_series_tickers():
 
         series_list = data.get("series") or []
         if not isinstance(series_list, list):
-            print("KALSHI_SERIES_BAD_PAYLOAD:", category, type(series_list).__name__, flush=True)
+            debug_print("KALSHI_SERIES_BAD_PAYLOAD:", category, type(series_list).__name__)
             series_list = []
 
-        print("KALSHI_SERIES_CATEGORY:", category, flush=True)
-        print("KALSHI_SERIES_FOUND:", len(series_list), flush=True)
+        debug_print("KALSHI_SERIES_CATEGORY:", category)
+        debug_print("KALSHI_SERIES_FOUND:", len(series_list))
 
         for item in series_list:
             ticker = safe_str(item.get("ticker")).strip()
@@ -488,12 +495,12 @@ def fetch_kalshi_series_tickers():
             tickers.append(ticker)
 
     if not tickers:
-        print("KALSHI_SERIES_FALLBACK_USED:", True, flush=True)
-        print("KALSHI_SERIES_TOTAL_UNIQUE:", len(KALSHI_FALLBACK_SERIES_ALLOWLIST), flush=True)
+        debug_print("KALSHI_SERIES_FALLBACK_USED:", True)
+        debug_print("KALSHI_SERIES_TOTAL_UNIQUE:", len(KALSHI_FALLBACK_SERIES_ALLOWLIST))
         return list(KALSHI_FALLBACK_SERIES_ALLOWLIST)
 
-    print("KALSHI_SERIES_FALLBACK_USED:", False, flush=True)
-    print("KALSHI_SERIES_TOTAL_UNIQUE:", len(tickers), flush=True)
+    debug_print("KALSHI_SERIES_FALLBACK_USED:", False)
+    debug_print("KALSHI_SERIES_TOTAL_UNIQUE:", len(tickers))
     return tickers
 
 
@@ -511,8 +518,8 @@ def series_has_open_markets(series_ticker):
         raise ValueError("Kalshi API response markets field is not a list")
 
     has_open = len(markets) > 0
-    print("KALSHI_SERIES_CHECK:", series_ticker, flush=True)
-    print("KALSHI_SERIES_HAS_OPEN:", has_open, flush=True)
+    debug_print("KALSHI_SERIES_CHECK:", series_ticker)
+    debug_print("KALSHI_SERIES_HAS_OPEN:", has_open)
     return has_open
 
 
@@ -524,9 +531,9 @@ def filter_series_with_open_markets(series_tickers):
             if series_has_open_markets(series_ticker):
                 valid.append(series_ticker)
         except Exception as e:
-            print("KALSHI_SERIES_CHECK_ERROR:", series_ticker, safe_str(e), flush=True)
+            debug_print("KALSHI_SERIES_CHECK_ERROR:", series_ticker, safe_str(e))
 
-    print("KALSHI_SERIES_VALIDATED_COUNT:", len(valid), flush=True)
+    debug_print("KALSHI_SERIES_VALIDATED_COUNT:", len(valid))
     return valid
 
 
@@ -570,10 +577,10 @@ def fetch_kalshi_rows(now_utc):
             page_count += 1
             cursor = data.get("cursor")
 
-            print("KALSHI_SERIES:", series_ticker, flush=True)
-            print("KALSHI_PAGE:", page_count, flush=True)
-            print("KALSHI_PAGE_ROWS:", len(page_rows), flush=True)
-            print("KALSHI_TOTAL_ACCUMULATED:", len(rows), flush=True)
+            debug_print("KALSHI_SERIES:", series_ticker)
+            debug_print("KALSHI_PAGE:", page_count)
+            debug_print("KALSHI_PAGE_ROWS:", len(page_rows))
+            debug_print("KALSHI_TOTAL_ACCUMULATED:", len(rows))
 
             if not cursor:
                 break
@@ -631,7 +638,13 @@ def main():
         json_rows.extend(fetch_kalshi_rows(now_utc))
 
     json_rows = dedupe_rows(json_rows)
-    json_rows.sort(key=lambda x: x["score"], reverse=True)
+    json_rows.sort(
+        key=lambda x: (
+            -x["score"],
+            x["source"],
+            x["platform_market_id"],
+        )
+    )
 
     csv_rows = [
         [
@@ -659,8 +672,8 @@ def main():
     refresh_latest_file(timestamped_json, latest_json)
     cleanup_old_exports(base_dir, KEEP_LATEST_COUNT)
 
-    print("CSV_ROWS:", len(csv_rows), flush=True)
-    print("JSON_ROWS:", len(json_rows), flush=True)
+    print("EXPORT_OK:", True, flush=True)
+    print("ROWS_TOTAL:", len(json_rows), flush=True)
     print("CSV_FILE:", os.path.basename(timestamped_csv), flush=True)
     print("JSON_FILE:", os.path.basename(timestamped_json), flush=True)
     print("LATEST_CSV_FILE:", os.path.basename(latest_csv), flush=True)
@@ -675,3 +688,4 @@ def main():
 
 if __name__ == "__main__":
     raise SystemExit(main())
+PY
