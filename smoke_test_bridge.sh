@@ -2,7 +2,6 @@
 set -euo pipefail
 
 BASE="http://127.0.0.1:8012"
-TICKER="KXFED-26OCT-T4.75"
 SERIES="KXFED"
 
 check_json() {
@@ -26,13 +25,13 @@ elif name == "latest_summary":
     assert data.get("status") == "ok", f"{name}: bad status"
     assert data["data"].get("total_markets", 0) > 0, f"{name}: no markets"
 
-elif name == "latest_ticker":
-    assert data.get("status") == "found", f"{name}: ticker not found"
-    assert data.get("count") == 1, f"{name}: bad count"
-
 elif name == "latest_series":
     assert data.get("status") == "found", f"{name}: series not found"
     assert data.get("count", 0) > 0, f"{name}: empty series"
+
+elif name == "latest_ticker":
+    assert data.get("status") == "found", f"{name}: ticker not found"
+    assert data.get("count") == 1, f"{name}: bad count"
 
 elif name == "check_ticker":
     assert data.get("status") == "found", f"{name}: ticker not found"
@@ -44,6 +43,23 @@ elif name == "run_export_and_check":
     assert data["data"].get("latest_found") is True, f"{name}: latest_found false"
 
 print(f"OK {name}")
+PY
+}
+
+extract_first_ticker() {
+  local json="$1"
+  python3 - "$json" <<'PY'
+import json
+import sys
+
+data = json.loads(sys.argv[1])
+markets = data.get("data", {}).get("markets", [])
+if not markets:
+    raise SystemExit("no markets in latest_series")
+ticker = markets[0].get("platform_market_id")
+if not ticker:
+    raise SystemExit("missing platform_market_id")
+print(ticker)
 PY
 }
 
@@ -59,16 +75,20 @@ echo "$resp"
 check_json "latest_summary" "$resp"
 echo
 
-echo "== latest_ticker =="
-resp="$(curl -s "$BASE/latest_ticker?ticker=$TICKER")"
-echo "$resp"
-check_json "latest_ticker" "$resp"
-echo
-
 echo "== latest_series =="
 resp="$(curl -s "$BASE/latest_series?series=$SERIES")"
 echo "$resp"
 check_json "latest_series" "$resp"
+echo
+
+TICKER="$(extract_first_ticker "$resp")"
+echo "USING_TICKER=$TICKER"
+echo
+
+echo "== latest_ticker =="
+resp="$(curl -s "$BASE/latest_ticker?ticker=$TICKER")"
+echo "$resp"
+check_json "latest_ticker" "$resp"
 echo
 
 echo "== check_ticker =="
@@ -88,4 +108,3 @@ check_json "run_export_and_check" "$resp"
 echo
 
 echo "ALL_SMOKE_TESTS_PASSED"
-
