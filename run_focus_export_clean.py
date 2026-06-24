@@ -1,4 +1,3 @@
-cat > /root/polymarket/run_focus_export_clean.py <<'PY'
 #!/usr/bin/env python3
 
 import csv
@@ -53,8 +52,6 @@ KALSHI_FALLBACK_SERIES_ALLOWLIST = [
     "KXUSPRES",
 ]
 
-KALSHI_SERIES_LIMIT = 200
-
 PRICE_MIN = 0.15
 PRICE_MAX = 0.40
 
@@ -84,25 +81,12 @@ def safe_str(value, default=""):
     return str(value)
 
 
-def parse_prices(raw):
-    if isinstance(raw, list):
-        return raw
-    if isinstance(raw, str):
-        try:
-            return json.loads(raw)
-        except json.JSONDecodeError:
-            return None
-    return None
-
-
 def parse_iso_datetime(value):
     if not value or not isinstance(value, str):
         return None
-
     raw = value.strip()
     if raw.endswith("Z"):
         raw = raw.replace("Z", "+00:00")
-
     try:
         dt = datetime.datetime.fromisoformat(raw)
         if dt.tzinfo is None:
@@ -162,7 +146,6 @@ def refresh_latest_file(src, dst):
 
 def cleanup_old_exports(base_dir, keep_count):
     deleted = []
-
     for pattern in ("polymarket_focus_*.csv", "polymarket_focus_*.json"):
         files = []
         for path in glob.glob(os.path.join(base_dir, pattern)):
@@ -170,7 +153,6 @@ def cleanup_old_exports(base_dir, keep_count):
             if "latest" in name:
                 continue
             files.append(path)
-
         files.sort(key=os.path.getmtime, reverse=True)
         for stale in files[keep_count:]:
             try:
@@ -178,7 +160,6 @@ def cleanup_old_exports(base_dir, keep_count):
                 deleted.append(stale)
             except FileNotFoundError:
                 pass
-
     debug_print("DELETED_OLD_FILES:", len(deleted))
 
 
@@ -260,7 +241,7 @@ def adapt_polymarket_market(event, market, now_utc):
 
     probability = safe_float(
         market.get("probability"),
-        safe_float(market.get("lastTradePrice"), 0.0)
+        safe_float(market.get("lastTradePrice"), 0.0),
     )
     volume = safe_float(market.get("volume"), 0.0)
     liquidity = safe_float(market.get("liquidity"), 0.0)
@@ -297,13 +278,11 @@ def adapt_polymarket_market(event, market, now_utc):
 
 def build_polymarket_rows(events, now_utc):
     rows = []
-
     for ev in events:
         for market in (ev.get("markets") or []):
             item = adapt_polymarket_market(ev, market, now_utc)
             if item is not None:
                 rows.append(item)
-
     return rows
 
 
@@ -314,10 +293,7 @@ def choose_kalshi_probability(raw_item):
 
     if last_price <= 0:
         raw_last = safe_float(raw_item.get("last_price"), 0.0)
-        if raw_last > 1:
-            last_price = raw_last / 100.0
-        else:
-            last_price = raw_last
+        last_price = raw_last / 100.0 if raw_last > 1 else raw_last
 
     if yes_bid <= 0:
         raw_yes_bid = safe_float(raw_item.get("yes_bid"), 0.0)
@@ -404,7 +380,6 @@ def adapt_kalshi_market(raw_item, now_utc):
 
 def build_kalshi_rows(markets, now_utc):
     rows = []
-
     total_markets = 0
     bad_status = 0
     bad_probability = 0
@@ -434,15 +409,12 @@ def build_kalshi_rows(markets, now_utc):
         if probability < PRICE_MIN or probability > PRICE_MAX:
             bad_probability += 1
             continue
-
         if volume < KALSHI_VOLUME_MIN:
             bad_volume += 1
             continue
-
         if liquidity < KALSHI_LIQUIDITY_MIN:
             bad_liquidity += 1
             continue
-
         if not kalshi_mode_allows_type(guessed_type):
             bad_category += 1
             continue
@@ -470,10 +442,7 @@ def fetch_kalshi_series_tickers():
     seen = set()
 
     for category in KALSHI_SERIES_CATEGORIES:
-        params = {
-            "category": category,
-            "limit": 200,
-        }
+        params = {"category": category, "limit": 200}
 
         resp = requests.get(KALSHI_SERIES_URL, params=params, timeout=TIMEOUT)
         resp.raise_for_status()
@@ -525,14 +494,12 @@ def series_has_open_markets(series_ticker):
 
 def filter_series_with_open_markets(series_tickers):
     valid = []
-
     for series_ticker in series_tickers:
         try:
             if series_has_open_markets(series_ticker):
                 valid.append(series_ticker)
         except Exception as e:
             debug_print("KALSHI_SERIES_CHECK_ERROR:", series_ticker, safe_str(e))
-
     debug_print("KALSHI_SERIES_VALIDATED_COUNT:", len(valid))
     return valid
 
@@ -633,18 +600,11 @@ def main():
 
     if ENABLE_POLYMARKET:
         json_rows.extend(fetch_polymarket_rows(now_utc))
-
     if ENABLE_KALSHI:
         json_rows.extend(fetch_kalshi_rows(now_utc))
 
     json_rows = dedupe_rows(json_rows)
-    json_rows.sort(
-        key=lambda x: (
-            -x["score"],
-            x["source"],
-            x["platform_market_id"],
-        )
-    )
+    json_rows.sort(key=lambda x: (-x["score"], x["source"], x["platform_market_id"]))
 
     csv_rows = [
         [
@@ -688,4 +648,3 @@ def main():
 
 if __name__ == "__main__":
     raise SystemExit(main())
-PY
