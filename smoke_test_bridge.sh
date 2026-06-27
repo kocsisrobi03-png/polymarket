@@ -105,5 +105,59 @@ resp="$(curl -s -X POST "$BASE/run_export_and_check" \
 echo "$resp"
 check_json "run_export_and_check" "$resp"
 echo
+echo "== latest_ticker not_found =="
+resp="$(curl -s "$BASE/latest_ticker?ticker=NOPE-TEST")"
+echo "$resp"
+python3 - "$resp" <<'PY'
+import json
+import sys
+data = json.loads(sys.argv[1])
+assert data.get("ok") is True
+assert data.get("status") == "not_found"
+assert data.get("count") == 0
+PY
+echo
 
+echo "== check_ticker not_found =="
+resp="$(curl -s -X POST "$BASE/check_ticker" \
+  -H 'Content-Type: application/json' \
+  -d '{"ticker":"NOPE-TEST"}')"
+echo "$resp"
+python3 - "$resp" <<'PY'
+import json
+import sys
+data = json.loads(sys.argv[1])
+assert data.get("ok") is True
+assert data.get("status") == "not_found"
+assert data.get("count") == 0
+PY
+echo
+
+echo "== latest_series not_found =="
+resp="$(curl -s "$BASE/latest_series?series=NOPE")"
+echo "$resp"
+python3 - "$resp" <<'PY'
+import json
+import sys
+data = json.loads(sys.argv[1])
+assert data.get("ok") is True
+assert data.get("status") == "not_found"
+assert data.get("count") == 0
+PY
+echo
+
+echo "== check_series not_found =="
+resp="$(curl -s -X POST "$BASE/check_series" \
+  -H 'Content-Type: application/json' \
+  -d '{"series":"NOPE"}')"
+echo "$resp"
+python3 - "$resp" <<'PY'
+import json
+import sys
+data = json.loads(sys.argv[1])
+assert data.get("ok") is True
+assert data.get("status") == "not_found"
+assert data.get("count") == 0
+PY
+echo
 echo "ALL_SMOKE_TESTS_PASSED"
